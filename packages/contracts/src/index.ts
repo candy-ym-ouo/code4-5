@@ -40,6 +40,9 @@ export type ColorChangeType = (typeof colorChangeTypes)[number];
 export const attachmentOwnerTypes = ["BATCH", "COLOR_CHANGE", "PROJECT", "CONSUMPTION"] as const;
 export type AttachmentOwnerType = (typeof attachmentOwnerTypes)[number];
 
+export const materialSpecEventTypes = ["SPLIT", "MERGE"] as const;
+export type MaterialSpecEventType = (typeof materialSpecEventTypes)[number];
+
 export const unitFamilies = {
   g: { family: "MASS", base: "g", factor: "1" },
   kg: { family: "MASS", base: "g", factor: "1000" },
@@ -56,7 +59,13 @@ export const decimalQuantity = z
   .string()
   .trim()
   .regex(/^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/, "数量必须是最多 6 位小数的非负十进制数");
-export const positiveQuantity = decimalQuantity.refine((value) => compareQuantities(value, "0") > 0, "数量必须大于 0");
+export const positiveQuantity = decimalQuantity.refine((value) => {
+  try {
+    return compareQuantities(value, "0") > 0;
+  } catch {
+    return false;
+  }
+}, "数量必须大于 0");
 export const moneyAmount = z
   .string()
   .trim()
@@ -246,6 +255,62 @@ export const colorChangePatchSchema = z.object({
 
 export const reverseConsumptionSchema = z.object({
   reason: z.string().trim().min(3).max(1000)
+});
+
+// 拆分时可以直接指定已存在的目标材料（携带版本做并发保护），也可以在同一事务中新建目标材料。
+export const splitTargetMaterialSchema = z.object({
+  materialId: z.string().uuid().optional(),
+  version: z.number().int().positive().optional(),
+  material: materialInputSchema.optional()
+}).refine(
+  (value) => (value.materialId !== undefined && value.material === undefined) || (value.materialId === undefined && value.material !== undefined),
+  { message: "目标材料必须且只能提供 materialId 或 material 之一", path: ["materialId"] }
+);
+
+export const specTransferInputSchema = z.object({
+  sourceBatchId: z.string().uuid(),
+  targetMaterialOrdinal: z.number().int().nonnegative(),
+  quantity: positiveQuantity,
+  unit: z.enum(stockUnits)
+});
+
+export const materialSplitSchema = z.object({
+  version: z.number().int().positive(),
+  reason: z.string().trim().min(3).max(500),
+  targets: z.array(splitTargetMaterialSchema).min(1).max(20),
+  transfers: z.array(specTransferInputSchema).min(1).max(500)
+}).superRefine((value, ctx) => {
+  value.transfers.forEach((transfer, index) => {
+    if (transfer.targetMaterialOrdinal >= value.targets.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "目标材料序号超出范围", path: ["transfers", index, "targetMaterialOrdinal"] });
+    }
+  });
+});
+
+export const materialMergeSourceSchema = z.object({
+  materialId: z.string().uuid(),
+  version: z.number().int().positive()
+});
+
+export const materialMergeSchema = z.object({
+  targetMaterialId: z.string().uuid(),
+  version: z.number().int().positive(),
+  reason: z.string().trim().min(3).max(500),
+  sources: z.array(materialMergeSourceSchema).min(1).max(20)
+}).superRefine((value, ctx) => {
+  value.sources.forEach((source, index) => {
+    if (source.materialId === value.targetMaterialId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "合并来源不能包含目标材料本身", path: ["sources", index, "materialId"] });
+    }
+  });
+  const uniqueIds = new Set(value.sources.map((source) => source.materialId));
+  if (uniqueIds.size !== value.sources.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "合并来源材料不能重复", path: ["sources"] });
+  }
+});
+
+export const materialArchiveSchema = z.object({
+  version: z.number().int().positive()
 });
 
 export const projectStatusSchema = z.object({

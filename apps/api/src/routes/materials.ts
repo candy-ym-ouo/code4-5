@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { materialInputSchema } from "@handcraft/contracts";
+import { materialArchiveSchema, materialInputSchema } from "@handcraft/contracts";
 import type { AuthenticatedRequest } from "../lib/auth.js";
 import { pool, withTransaction } from "../lib/db.js";
 import { AppError } from "../lib/errors.js";
@@ -229,10 +229,16 @@ export async function materialRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post<{ Params: { id: string } }>("/materials/:id/archive", async (request) => {
+    const input = parseInput(materialArchiveSchema, request.body);
     const user = (request as AuthenticatedRequest).authUser;
     return withTransaction(async (client) => {
-      const material = await client.query("SELECT id FROM materials WHERE id = $1 FOR UPDATE", [request.params.id]);
-      if (!material.rowCount) throw new AppError(404, "NOT_FOUND", "材料不存在");
+      const material = await client.query("SELECT id, version, archived_at FROM materials WHERE id = $1 FOR UPDATE", [request.params.id]);
+      const current = material.rows[0];
+      if (!current) throw new AppError(404, "NOT_FOUND", "材料不存在");
+      if (current.archived_at) return { data: current };
+      if (current.version !== input.version) {
+        throw new AppError(409, "VERSION_CONFLICT", "材料已被其他操作修改，请刷新后重试");
+      }
       const stock = await client.query(
         "SELECT 1 FROM batches WHERE material_id = $1 AND status = 'ACTIVE' AND remaining_quantity > 0 LIMIT 1",
         [request.params.id]

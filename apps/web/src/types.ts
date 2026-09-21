@@ -136,5 +136,47 @@ export const movementLabels: Record<string, string> = {
   CONSUMPTION: "材料消耗",
   ADJUSTMENT_IN: "盘增",
   ADJUSTMENT_OUT: "盘减",
-  REVERSAL: "撤销恢复"
+  REVERSAL: "撤销恢复",
+  SPEC_TRANSFER_OUT: "规格转出"
+};
+
+export type SpecTransfer = {
+  eventId: string;
+  eventType: "SPLIT" | "MERGE";
+  reason: string;
+  eventCreatedAt: string;
+  direction: "SOURCE" | "TARGET";
+  sourceBatchId: string;
+  targetBatchId: string;
+  sourceBatchCode: string | null;
+  targetBatchCode: string | null;
+  sourceMaterialId: string;
+  sourceMaterialName: string;
+  targetMaterialId: string;
+  targetMaterialName: string;
+  sourceQuantity: string;
+  targetQuantity: string;
+  sourceUnit: string;
+  targetUnit: string;
+};
+
+export type MaterialLineageEvent = {
+  id: string;
+  eventType: "SPLIT" | "MERGE";
+  reason: string;
+  createdAt: string;
+  participants: {
+    role: "SOURCE" | "TARGET";
+    ordinal: number;
+    versionBefore: number;
+    nameSnapshot: string;
+    codeSnapshot: string | null;
+    stockUnitSnapshot: string;
+  }[];
+  transfers: SpecTransfer[];
+};
+
+export const specEventLabels: Record<string, string> = {
+  SPLIT: "规格拆分",
+  MERGE: "规格合并"
 };

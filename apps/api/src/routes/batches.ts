@@ -106,7 +106,7 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
       [request.params.id]
     );
     if (!result.rows[0]) throw new AppError(404, "NOT_FOUND", "批次不存在");
-    const [movements, colors, attachments] = await Promise.all([
+    const [movements, colors, attachments, specTransfers] = await Promise.all([
       pool.query(
         `SELECT id, type, signed_quantity::text AS "signedQuantity", stock_unit AS "stockUnit",
                 before_quantity::text AS "beforeQuantity", after_quantity::text AS "afterQuantity",
@@ -125,9 +125,28 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
         `SELECT id, original_name AS "originalName", mime_type AS "mimeType", byte_size::text AS "byteSize", created_at AS "createdAt"
            FROM attachments WHERE owner_type = 'BATCH' AND owner_id = $1 ORDER BY created_at DESC`,
         [request.params.id]
+      ),
+      pool.query(
+        `SELECT t.event_id AS "eventId", e.event_type AS "eventType", e.reason, e.created_at AS "eventCreatedAt",
+                CASE WHEN t.source_batch_id = $1 THEN 'SOURCE' ELSE 'TARGET' END AS "direction",
+                t.source_batch_id AS "sourceBatchId", t.target_batch_id AS "targetBatchId",
+                sb.batch_code AS "sourceBatchCode", tb.batch_code AS "targetBatchCode",
+                t.source_material_id AS "sourceMaterialId", sm.name AS "sourceMaterialName",
+                t.target_material_id AS "targetMaterialId", tm.name AS "targetMaterialName",
+                t.source_quantity::text AS "sourceQuantity", t.target_quantity::text AS "targetQuantity",
+                t.source_unit AS "sourceUnit", t.target_unit AS "targetUnit"
+           FROM material_spec_batch_transfers t
+           JOIN material_spec_events e ON e.id = t.event_id
+           JOIN batches sb ON sb.id = t.source_batch_id
+           JOIN batches tb ON tb.id = t.target_batch_id
+           JOIN materials sm ON sm.id = t.source_material_id
+           JOIN materials tm ON tm.id = t.target_material_id
+          WHERE t.source_batch_id = $1 OR t.target_batch_id = $1
+          ORDER BY e.created_at DESC, t.ordinal`,
+        [request.params.id]
       )
     ]);
-    return { data: { ...result.rows[0], movements: movements.rows, colorChanges: colors.rows, attachments: attachments.rows } };
+    return { data: { ...result.rows[0], movements: movements.rows, colorChanges: colors.rows, attachments: attachments.rows, specTransfers: specTransfers.rows } };
   });
 
   app.post("/batches", async (request, reply) => {

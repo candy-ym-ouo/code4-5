@@ -166,6 +166,36 @@ onMounted(load);
 
       <AttachmentPanel owner-type="BATCH" :owner-id="batch.id" :attachments="batch.attachments" @changed="load" />
 
+      <section v-if="batch.specTransfers && batch.specTransfers.length" class="panel">
+        <h2>规格拆分/合并记录</h2>
+        <el-timeline>
+          <el-timeline-item v-for="transfer in batch.specTransfers" :key="transfer.eventId" :timestamp="new Date(transfer.eventCreatedAt).toLocaleString()" placement="top">
+            <el-tag size="small" :type="transfer.eventType === 'SPLIT' ? 'warning' : 'success'" style="margin-right:8px">
+              {{ transfer.eventType === "SPLIT" ? "规格拆分" : "规格合并" }}
+            </el-tag>
+            <span>{{ transfer.reason }}</span>
+            <div class="muted" style="margin-top:4px">
+              <template v-if="transfer.direction === 'SOURCE'">
+                本批次转出
+                {{ transfer.sourceQuantity }} {{ transfer.sourceUnit }}
+                至材料
+                <router-link :to="`/materials/${transfer.targetMaterialId}`">{{ transfer.targetMaterialName }}</router-link>
+                的批次
+                <router-link :to="`/batches/${transfer.targetBatchId}`">{{ transfer.targetBatchCode || transfer.targetBatchId.slice(0, 8) }}</router-link>
+                ，入库 <strong>{{ transfer.targetQuantity }} {{ transfer.targetUnit }}</strong>
+              </template>
+              <template v-else>
+                由材料
+                <router-link :to="`/materials/${transfer.sourceMaterialId}`">{{ transfer.sourceMaterialName }}</router-link>
+                的批次
+                <router-link :to="`/batches/${transfer.sourceBatchId}`">{{ transfer.sourceBatchCode || transfer.sourceBatchId.slice(0, 8) }}</router-link>
+                转入，原始数量 {{ transfer.sourceQuantity }} {{ transfer.sourceUnit }}
+              </template>
+            </div>
+          </el-timeline-item>
+        </el-timeline>
+      </section>
+
       <div class="two-column">
         <section class="panel">
           <h2>库存流水</h2>

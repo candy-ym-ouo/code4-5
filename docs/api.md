@@ -69,7 +69,10 @@
 | GET/POST | `/materials` | 聚合库存查询或创建 |
 | GET/PATCH | `/materials/:id` | 详情或更新 |
 | GET | `/materials/:id/batches` | 材料批次 |
-| POST | `/materials/:id/archive` | 归档 |
+| GET | `/materials/:id/lineage` | 规格拆分/合并谱系 |
+| POST | `/materials/:id/split` | 规格拆分 |
+| POST | `/materials/merge` | 规格合并 |
+| POST | `/materials/:id/archive` | 归档（需 `version`） |
 
 材料列表查询参数：
 
@@ -98,6 +101,55 @@
   "defaultColorHex": "#8B5A2B",
   "tags": ["天然", "染布"]
 }
+```
+
+### 4.1 规格拆分与合并
+
+规格变更不改动历史批次、项目需求和消耗记录的归属，而是通过只追加的谱系事件把库存从来源批次转到目标材料的新批次，保证历史批次与单位映射始终可追溯。
+
+- 拆分 `POST /materials/:id/split`：把来源材料一个或多个批次的部分或全部库存转到一个或多个目标材料；目标可以是已存在材料（携带其 `version`）或在同一事务中新建。未转完的库存留在原档案，全部转出后来源材料自动归档。
+- 合并 `POST /materials/merge`：把多个来源材料的全部在库批次整批转入一个既有目标材料；来源单位必须与目标单位属于同一度量族（如 g/kg、ml/l），按定点十进制自动换算，来源材料转出后自动归档。
+- 谱系 `GET /materials/:id/lineage`：返回该材料参与过的全部事件、当事材料的名称/编码/单位快照以及逐批次的数量与单位映射。批次详情中的 `specTransfers` 提供双向跳转。
+
+来源批次记 `SPEC_TRANSFER_OUT` 流水，目标批次首条流水为引用同一事件的 `OPENING`；库存总量守恒。所有被修改的材料都按 `version` 做乐观并发控制，冲突返回 `409 VERSION_CONFLICT`。两个接口都支持 `Idempotency-Key`。
+
+拆分请求：
+
+```json
+{
+  "version": 1,
+  "reason": "供应商改为预磨细粉，档案拆分",
+  "targets": [
+    { "materialId": "uuid", "version": 1 },
+    { "material": { "name": "苏木粗颗粒", "craftTypes": ["DYEING"], "stockUnit": "g" } }
+  ],
+  "transfers": [
+    { "sourceBatchId": "uuid", "targetMaterialOrdinal": 0, "quantity": "1.5", "unit": "kg" },
+    { "sourceBatchId": "uuid", "targetMaterialOrdinal": 1, "quantity": "500", "unit": "g" }
+  ]
+}
+```
+
+合并请求：
+
+```json
+{
+  "targetMaterialId": "uuid",
+  "version": 1,
+  "reason": "两个供应商档案合并",
+  "sources": [
+    { "materialId": "uuid-a", "version": 2 },
+    { "materialId": "uuid-b", "version": 1 }
+  ]
+}
+```
+
+主要错误：`409 VERSION_CONFLICT`（材料已被并发修改）、`409 INSUFFICIENT_STOCK`（转出超过批次结余）、`409 NO_STOCK_TO_MERGE`（来源没有在库批次）、`422 UNIT_INCOMPATIBLE`（单位不属于同一度量族）、`422 QUANTITY_PRECISION_EXCEEDED`（换算后超过 6 位小数）、`409 MATERIAL_ARCHIVED`（归档材料不能参与规格事件）。
+
+归档请求体携带当前版本，归档后的材料不能再新增批次、项目需求、消耗、颜色变化或规格事件：
+
+```json
+{ "version": 3 }
 ```
 
 ## 5. 批次与库存

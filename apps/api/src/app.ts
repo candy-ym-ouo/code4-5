@@ -12,6 +12,7 @@ import { checkStorageWritable } from "./lib/storage.js";
 import { authRoutes } from "./routes/auth.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { materialRoutes } from "./routes/materials.js";
+import { materialSpecRoutes } from "./routes/materialSpec.js";
 import { batchRoutes } from "./routes/batches.js";
 import { projectRoutes } from "./routes/projects.js";
 import { consumptionRoutes } from "./routes/consumptions.js";
@@ -89,6 +90,7 @@ export async function buildApp(options: { runDatabaseMigrations?: boolean } = {}
     protectedRoutes.addHook("preHandler", authenticate);
     await protectedRoutes.register(catalogRoutes);
     await protectedRoutes.register(materialRoutes);
+    await protectedRoutes.register(materialSpecRoutes);
     await protectedRoutes.register(batchRoutes);
     await protectedRoutes.register(projectRoutes);
     await protectedRoutes.register(consumptionRoutes);

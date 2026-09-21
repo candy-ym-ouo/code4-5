@@ -3,18 +3,26 @@ import { onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { request, ApiError } from "@/lib/api";
-import { craftTypeLabels, statusLabels, type Material } from "@/types";
+import { craftTypeLabels, specEventLabels, statusLabels, type Material, type MaterialLineageEvent } from "@/types";
+import SpecEventDialog from "@/components/SpecEventDialog.vue";
 
 const route = useRoute();
 const router = useRouter();
 const loading = ref(true);
 const material = ref<(Material & { batches: any[] }) | null>(null);
+const lineage = ref<MaterialLineageEvent[]>([]);
+const dialogVisible = ref(false);
+const dialogMode = ref<"SPLIT" | "MERGE">("SPLIT");
 
 async function load() {
   loading.value = true;
   try {
-    const response = await request<{ data: Material & { batches: any[] } }>(`/materials/${route.params.id}`);
-    material.value = response.data;
+    const [detail, lineageResponse] = await Promise.all([
+      request<{ data: Material & { batches: any[] } }>(`/materials/${route.params.id}`),
+      request<{ data: MaterialLineageEvent[] }>(`/materials/${route.params.id}/lineage`)
+    ]);
+    material.value = detail.data;
+    lineage.value = lineageResponse.data;
   } catch (error) {
     ElMessage.error(error instanceof ApiError ? error.message : "材料加载失败");
   } finally {
@@ -22,10 +30,16 @@ async function load() {
   }
 }
 
+function openDialog(mode: "SPLIT" | "MERGE") {
+  dialogMode.value = mode;
+  dialogVisible.value = true;
+}
+
 async function archive() {
+  if (!material.value) return;
   try {
     await ElMessageBox.confirm("归档后材料不会出现在新建记录中，但历史仍保留。仅在无正库存时允许归档。", "确认归档", { type: "warning" });
-    await request(`/materials/${route.params.id}/archive`, { method: "POST" });
+    await request(`/materials/${route.params.id}/archive`, { method: "POST", body: { version: material.value.version } });
     ElMessage.success("材料已归档");
     await router.push("/materials");
   } catch (error: any) {
@@ -45,6 +59,8 @@ onMounted(load);
         <div>
           <el-button v-if="!material.archivedAt" @click="router.push(`/materials/${material.id}/edit`)">编辑</el-button>
           <el-button type="primary" @click="router.push({ path: '/batches/new', query: { materialId: material.id } })">新批次入库</el-button>
+          <el-button v-if="!material.archivedAt" type="warning" plain @click="openDialog('SPLIT')">规格拆分</el-button>
+          <el-button v-if="!material.archivedAt" type="success" plain @click="openDialog('MERGE')">规格合并</el-button>
           <el-button v-if="!material.archivedAt" type="danger" plain @click="archive">归档</el-button>
         </div>
       </header>
@@ -79,6 +95,38 @@ onMounted(load);
           <el-button type="primary" @click="router.push({ path: '/batches/new', query: { materialId: material.id } })">录入第一批材料</el-button>
         </el-empty>
       </section>
+
+      <section class="panel">
+        <h2>规格沿革</h2>
+        <el-timeline v-if="lineage.length">
+          <el-timeline-item v-for="event in lineage" :key="event.id" :timestamp="new Date(event.createdAt).toLocaleString()" placement="top">
+            <el-tag size="small" :type="event.eventType === 'SPLIT' ? 'warning' : 'success'" style="margin-right: 8px">
+              {{ specEventLabels[event.eventType] }}
+            </el-tag>
+            <strong>{{ event.reason }}</strong>
+            <div class="muted" style="margin: 4px 0">
+              <span v-for="participant in event.participants" :key="`${participant.role}-${participant.ordinal}`" style="margin-right: 12px">
+                <el-tag size="small" :type="participant.role === 'SOURCE' ? 'info' : 'primary'" effect="plain">
+                  {{ participant.role === "SOURCE" ? "来源" : "目标" }}
+                </el-tag>
+                {{ participant.nameSnapshot }}（{{ participant.stockUnitSnapshot }}）
+              </span>
+            </div>
+            <div v-for="transfer in event.transfers" :key="`${event.id}-${transfer.sourceBatchId}-${transfer.targetBatchId}`" class="muted" style="font-size: 13px">
+              批次 {{ transfer.sourceBatchCode || transfer.sourceBatchId.slice(0, 8) }}
+              {{ transfer.sourceQuantity }} {{ transfer.sourceUnit }}
+              （{{ transfer.sourceMaterialName }}）
+              →
+              <router-link :to="`/batches/${transfer.targetBatchId}`">{{ transfer.targetBatchCode || transfer.targetBatchId.slice(0, 8) }}</router-link>
+              {{ transfer.targetQuantity }} {{ transfer.targetUnit }}
+              （{{ transfer.targetMaterialName }}）
+            </div>
+          </el-timeline-item>
+        </el-timeline>
+        <el-empty v-else description="该材料还没有规格拆分或合并记录" :image-size="70" />
+      </section>
     </template>
+
+    <SpecEventDialog v-if="material" v-model="dialogVisible" :mode="dialogMode" :material="material" @completed="load" />
   </div>
 </template>
