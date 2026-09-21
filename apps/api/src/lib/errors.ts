@@ -85,6 +85,18 @@ export function sendError(reply: FastifyReply, error: unknown, requestId: string
   }
 
   if (databaseCode === "23502" || databaseCode === "23514" || databaseCode === "23P01") {
+    // 归档材料禁止新增引用的约束触发器（见 004_material_lineage.sql）
+    if (databaseCode === "23514" && metadata.constraint === "material_archived_no_new_reference") {
+      reply.status(409).send({
+        error: {
+          code: "MATERIAL_ARCHIVED",
+          message: "材料已归档，不能新增批次或项目需求引用",
+          fieldErrors: {},
+          requestId
+        }
+      });
+      return;
+    }
     reply.status(422).send({
       error: {
         code: "DATA_RULE_VIOLATION",

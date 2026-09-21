@@ -135,10 +135,13 @@ export async function insightRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get("/exports/workspace.json", async (_request, reply) => {
-    const [sources, locations, materials, batches, movements, projects, requirements, consumptions, colorChanges, attachments, auditLogs] = await Promise.all([
+    const [sources, locations, materials, materialEvents, materialEventMaterials, materialEventBatches, batches, movements, projects, requirements, consumptions, colorChanges, attachments, auditLogs] = await Promise.all([
       pool.query("SELECT * FROM sources ORDER BY created_at"),
       pool.query("SELECT * FROM storage_locations ORDER BY created_at"),
       pool.query("SELECT * FROM materials ORDER BY created_at"),
+      pool.query("SELECT * FROM material_events ORDER BY created_at"),
+      pool.query("SELECT * FROM material_event_materials ORDER BY event_id, id"),
+      pool.query("SELECT * FROM material_event_batches ORDER BY event_id, seq"),
       pool.query("SELECT * FROM batches ORDER BY created_at"),
       pool.query("SELECT * FROM stock_movements ORDER BY created_at"),
       pool.query("SELECT * FROM projects ORDER BY created_at"),
@@ -151,10 +154,13 @@ export async function insightRoutes(app: FastifyInstance): Promise<void> {
     reply.header("Content-Disposition", `attachment; filename="handcraft-workspace-${new Date().toISOString().slice(0, 10)}.json"`);
     return reply.send({
       exportedAt: new Date().toISOString(),
-      schemaVersion: 1,
+      schemaVersion: 2,
       sources: sources.rows,
       locations: locations.rows,
       materials: materials.rows,
+      materialEvents: materialEvents.rows,
+      materialEventMaterials: materialEventMaterials.rows,
+      materialEventBatches: materialEventBatches.rows,
       batches: batches.rows,
       stockMovements: movements.rows,
       projects: projects.rows,

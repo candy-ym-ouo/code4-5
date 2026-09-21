@@ -10,6 +10,7 @@ const router = createRouter({
     { path: "/materials", component: () => import("@/pages/MaterialsPage.vue") },
     { path: "/materials/new", component: () => import("@/pages/MaterialFormPage.vue") },
     { path: "/materials/:id/edit", component: () => import("@/pages/MaterialFormPage.vue") },
+    { path: "/materials/:id/lineage-ops", component: () => import("@/pages/MaterialLineageOpsPage.vue") },
     { path: "/materials/:id", component: () => import("@/pages/MaterialDetailPage.vue") },
     { path: "/batches", component: () => import("@/pages/BatchesPage.vue") },
     { path: "/batches/new", component: () => import("@/pages/BatchFormPage.vue") },

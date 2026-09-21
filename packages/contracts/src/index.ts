@@ -18,9 +18,14 @@ export const movementTypes = [
   "CONSUMPTION",
   "ADJUSTMENT_IN",
   "ADJUSTMENT_OUT",
-  "REVERSAL"
+  "REVERSAL",
+  "TRANSFER_OUT",
+  "TRANSFER_IN"
 ] as const;
 export type MovementType = (typeof movementTypes)[number];
+
+export const materialEventTypes = ["SPLIT", "MERGE"] as const;
+export type MaterialEventType = (typeof materialEventTypes)[number];
 
 export const projectStatuses = ["PLANNED", "IN_PROGRESS", "COMPLETED", "ARCHIVED"] as const;
 export type ProjectStatus = (typeof projectStatuses)[number];
@@ -151,6 +156,36 @@ export const materialInputSchema = z.object({
   defaultColorHex: z.union([colorHex, z.literal("")]).nullable().optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(30).default([]),
   notes: z.string().trim().max(5000).nullable().optional()
+});
+
+// 规格拆分时新档案的字段：与材料档案一致，但库存单位必须由来源单位族决定
+const newMaterialProfileSchema = materialInputSchema.omit({ stockUnit: true }).extend({
+  stockUnit: z.enum(stockUnits)
+});
+
+export const materialSplitSchema = z.object({
+  version: z.number().int().positive(),
+  reason: z.string().trim().min(3).max(1000),
+  newMaterial: newMaterialProfileSchema,
+  // 迁移到新规格的批次；同单位直接移动，跨单位逐批换算
+  batchIds: z.array(z.string().uuid()).min(1),
+  // 批次全部迁出后自动归档来源材料
+  archiveSourceWhenEmpty: z.boolean().default(true)
+});
+
+export const materialMergeSchema = z.object({
+  version: z.number().int().positive(),
+  reason: z.string().trim().min(3).max(1000),
+  sourceMaterialIds: z.array(z.string().uuid()).min(1),
+  // 目标材料：已存在的不同规格档案
+  targetMaterialId: z.string().uuid(),
+  targetVersion: z.number().int().positive(),
+  // 来源材料批次全部迁走后自动归档来源材料
+  archiveSourceWhenEmpty: z.boolean().default(true)
+});
+
+export const archiveMaterialSchema = z.object({
+  version: z.number().int().positive()
 });
 
 export const batchCreateSchema = z.object({

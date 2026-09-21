@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { materialInputSchema } from "@handcraft/contracts";
+import { archiveMaterialSchema, materialInputSchema } from "@handcraft/contracts";
 import type { AuthenticatedRequest } from "../lib/auth.js";
 import { pool, withTransaction } from "../lib/db.js";
 import { AppError } from "../lib/errors.js";
@@ -229,10 +229,15 @@ export async function materialRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post<{ Params: { id: string } }>("/materials/:id/archive", async (request) => {
+    const input = parseInput(archiveMaterialSchema, request.body ?? {});
     const user = (request as AuthenticatedRequest).authUser;
     return withTransaction(async (client) => {
-      const material = await client.query("SELECT id FROM materials WHERE id = $1 FOR UPDATE", [request.params.id]);
+      const material = await client.query("SELECT * FROM materials WHERE id = $1 FOR UPDATE", [request.params.id]);
       if (!material.rowCount) throw new AppError(404, "NOT_FOUND", "材料不存在");
+      if (material.rows[0].version !== input.version) {
+        throw new AppError(409, "VERSION_CONFLICT", "材料已被其他操作修改，请刷新后重试");
+      }
+      if (material.rows[0].archived_at) return { data: material.rows[0] };
       const stock = await client.query(
         "SELECT 1 FROM batches WHERE material_id = $1 AND status = 'ACTIVE' AND remaining_quantity > 0 LIMIT 1",
         [request.params.id]
@@ -240,7 +245,7 @@ export async function materialRoutes(app: FastifyInstance): Promise<void> {
       if (stock.rowCount) throw new AppError(409, "MATERIAL_HAS_STOCK", "材料仍有正库存，不能归档");
       const result = await client.query("UPDATE materials SET archived_at = now(), version = version + 1 WHERE id = $1 RETURNING *", [request.params.id]);
       if (!result.rows[0]) throw new AppError(404, "NOT_FOUND", "材料不存在");
-      await writeAudit(client, { actorUserId: user.id, action: "ARCHIVE", entityType: "MATERIAL", entityId: request.params.id, afterData: result.rows[0], requestId: request.id });
+      await writeAudit(client, { actorUserId: user.id, action: "ARCHIVE", entityType: "MATERIAL", entityId: request.params.id, beforeData: material.rows[0], afterData: result.rows[0], requestId: request.id });
       return { data: result.rows[0] };
     });
   });

@@ -69,7 +69,10 @@
 | GET/POST | `/materials` | 聚合库存查询或创建 |
 | GET/PATCH | `/materials/:id` | 详情或更新 |
 | GET | `/materials/:id/batches` | 材料批次 |
-| POST | `/materials/:id/archive` | 归档 |
+| GET | `/materials/:id/lineage` | 规格拆分/合并谱系时间线 |
+| POST | `/materials/:id/split` | 规格拆分为新材料 |
+| POST | `/materials/merge` | 规格合并到已有材料 |
+| POST | `/materials/:id/archive` | 归档（请求体需携带 `version`） |
 
 材料列表查询参数：
 
@@ -100,7 +103,60 @@
 }
 ```
 
-## 5. 批次与库存
+## 5. 规格拆分与合并
+
+材料档案支持把一个规格拆成新档案，或把若干同单位族的规格合并到一个已有档案。
+两类操作都在单个事务中完成，谱系事件只追加、不修改、不删除，逐批保留单位换算前后的数量映射。
+
+不变量：
+
+- 只能在同一单位族内操作（如 `g ↔ kg`、`ml ↔ l`），不同单位族拒绝。
+- 同单位迁移：批次直接改挂材料，历史库存流水原样保留，不新增流水。
+- 跨单位迁移：旧批次写一条 `TRANSFER_OUT` 流水（余额清零并归档，流水不可变），
+  在目标材料下建立承接批次，按目标单位写一条 `TRANSFER_IN` 开账流水，换算依据落库到 `material_event_batches`。
+- 合并时来源材料的项目需求会改挂到目标材料，计划数量同步换算。
+- 拆分/合并携带来源（和目标）材料的 `version`，版本不匹配返回 `409 VERSION_CONFLICT`，拒绝覆盖。
+- 批次全部迁走后默认自动归档来源材料（`archiveSourceWhenEmpty`）。
+- 已归档材料不能拆分、合并、新增批次或被项目需求引用；数据库约束触发器兜底。
+- 跨单位迁移不允许选择零余额批次（无法为承接批次开正账）。
+
+拆分 `POST /materials/:id/split`：
+
+```json
+{
+  "version": 3,
+  "reason": "线轴规格改为按 m 独立管理",
+  "batchIds": ["uuid"],
+  "archiveSourceWhenEmpty": true,
+  "newMaterial": {
+    "name": "苏木线轴",
+    "craftTypes": ["DYEING"],
+    "stockUnit": "m",
+    "code": null,
+    "subtype": null,
+    "lowStockThreshold": null,
+    "tags": []
+  }
+}
+```
+
+合并 `POST /materials/merge`：
+
+```json
+{
+  "version": 2,
+  "targetVersion": 5,
+  "reason": "确认两种染材为同一规格",
+  "sourceMaterialIds": ["uuid-a"],
+  "targetMaterialId": "uuid-b",
+  "archiveSourceWhenEmpty": true
+}
+```
+
+`GET /materials/:id/lineage` 返回该材料参与的全部事件，每个事件含来源/目标材料快照，
+以及每个批次的 `action`（`MOVED`/`CONVERTED`）、`fromQuantity/fromUnit`、`toQuantity/toUnit` 和新旧批次链接。
+
+## 6. 批次与库存
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -139,7 +195,7 @@
 
 同一 `Idempotency-Key` 重试不会重复调整。
 
-## 6. 项目与需求
+## 7. 项目与需求
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -162,7 +218,7 @@
 }
 ```
 
-## 7. 消耗与撤销
+## 8. 消耗与撤销
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -195,7 +251,7 @@
 }
 ```
 
-## 8. 颜色变化
+## 9. 颜色变化
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -221,7 +277,7 @@
 
 颜色变化不扣库存。
 
-## 9. 附件和导出
+## 10. 附件和导出
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |

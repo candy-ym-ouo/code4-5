@@ -25,6 +25,36 @@ export type Material = {
   version: number;
 };
 
+export type MaterialLineageEvent = {
+  id: string;
+  eventType: "SPLIT" | "MERGE";
+  reason: string | null;
+  actorName: string;
+  createdAt: string;
+  materials: {
+    eventId: string;
+    materialId: string;
+    role: "SOURCE" | "TARGET";
+    materialName: string;
+    materialCode: string | null;
+    stockUnit: string;
+  }[];
+  batches: {
+    eventId: string;
+    sourceBatchId: string | null;
+    targetBatchId: string | null;
+    sourceMaterialId: string;
+    targetMaterialId: string;
+    action: "MOVED" | "CONVERTED";
+    fromQuantity: string;
+    fromUnit: string;
+    toQuantity: string;
+    toUnit: string;
+    sourceBatchCode: string | null;
+    targetBatchCode: string | null;
+  }[];
+};
+
 export type Batch = {
   id: string;
   materialId: string;
@@ -136,5 +166,7 @@ export const movementLabels: Record<string, string> = {
   CONSUMPTION: "材料消耗",
   ADJUSTMENT_IN: "盘增",
   ADJUSTMENT_OUT: "盘减",
-  REVERSAL: "撤销恢复"
+  REVERSAL: "撤销恢复",
+  TRANSFER_OUT: "规格转出",
+  TRANSFER_IN: "规格承接"
 };
